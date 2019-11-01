@@ -14,6 +14,7 @@
 #include "src/execution/frames-inl.h"
 #include "src/execution/isolate-inl.h"
 #include "src/execution/messages.h"
+#include "src/execution/runtime-profiler.h"
 #include "src/handles/maybe-handles.h"
 #include "src/init/bootstrapper.h"
 #include "src/logging/counters.h"
@@ -283,6 +284,21 @@ RUNTIME_FUNCTION(Runtime_StackGuard) {
   return isolate->stack_guard()->HandleInterrupts();
 }
 
+RUNTIME_FUNCTION(Runtime_StackGuardWithGap) {
+  SealHandleScope shs(isolate);
+  DCHECK_EQ(args.length(), 1);
+  CONVERT_UINT32_ARG_CHECKED(gap, 0);
+  TRACE_EVENT0("v8.execute", "V8.StackGuard");
+
+  // First check if this is a real stack overflow.
+  StackLimitCheck check(isolate);
+  if (check.JsHasOverflowed(gap)) {
+    return isolate->StackOverflow();
+  }
+
+  return isolate->stack_guard()->HandleInterrupts();
+}
+
 RUNTIME_FUNCTION(Runtime_BytecodeBudgetInterrupt) {
   HandleScope scope(isolate);
   DCHECK_EQ(1, args.length());
@@ -296,10 +312,11 @@ RUNTIME_FUNCTION(Runtime_BytecodeBudgetInterrupt) {
     function->feedback_vector().set_invocation_count(1);
     return ReadOnlyRoots(isolate).undefined_value();
   }
-  // Handle interrupts.
   {
     SealHandleScope shs(isolate);
-    return isolate->stack_guard()->HandleInterrupts();
+    isolate->counters()->runtime_profiler_ticks()->Increment();
+    isolate->runtime_profiler()->MarkCandidatesForOptimization();
+    return ReadOnlyRoots(isolate).undefined_value();
   }
 }
 
